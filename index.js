@@ -87,7 +87,7 @@ function createBot() {
          const messages = config.utils['chat-messages']['messages'];
 
          if (config.utils['chat-messages'].repeat) {
-            const delay = config.utils['chat-messages'].repeat-delay;
+            const delay = config.utils['chat-messages']['repeat-delay'];
             let i = 0;
             setInterval(() => {
                if(bot && bot.chat) {

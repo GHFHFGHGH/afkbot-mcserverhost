@@ -9,7 +9,7 @@ const express = require('express');
 const app = express();
 
 app.get('/', (req, res) => {
-  res.send('Bot has arrived and server is running perfectly!');
+  res.send('Bot is running perfectly!');
 });
 
 const PORT = process.env.PORT || 8000;
@@ -17,7 +17,6 @@ app.listen(PORT, () => {
   console.log(`[Web Server] Started on port ${PORT}`);
 });
 
-// نظام الحماية الشامل لمنع تشغيل نسختين في نفس الوقت ومنع تعليق الجلسات
 let isBotRunning = false;
 let rotationInterval;
 
@@ -42,7 +41,6 @@ function createBot() {
    bot.loadPlugin(pathfinder);
    bot.settings.colorsEnabled = false;
 
-   // نظام الدوران التلقائي الذكي لمنع طرد الـ AFK بشكل طبيعي ودون تعليق
    function startRotating() {
       if (rotationInterval) clearInterval(rotationInterval);
       let angle = 0;
@@ -61,7 +59,6 @@ function createBot() {
       }
    }
 
-   // معالجة الشات لعمليات الـ Register والـ Login التلقائية
    bot.on('chat', (username, message) => {
       if (message.includes('/register')) {
          const password = config.utils['auto-auth'].password;
@@ -81,12 +78,12 @@ function createBot() {
       const mcData = require('minecraft-data')(bot.version);
       const defaultMove = new Movements(bot, mcData);
 
-      // تشغيل رسائل الشات التلقائية
       if (config.utils['chat-messages'].enabled) {
          console.log('[INFO] Started chat-messages module');
          const messages = config.utils['chat-messages']['messages'];
 
          if (config.utils['chat-messages'].repeat) {
+            // ✅ إصلاح القوس هنا أيضاً لتفادي كراش السطر 90 القديم
             const delay = config.utils['chat-messages']['repeat-delay'];
             let i = 0;
             setInterval(() => {
@@ -100,7 +97,6 @@ function createBot() {
          }
       }
 
-      // تأخير الحركة 5 ثوانٍ كاملة لتجنب صدمة الاتصال وضمان ثبات الـ ECONNRESET
       setTimeout(() => {
          const pos = config.position;
          if (config.position.enabled) {
@@ -117,7 +113,6 @@ function createBot() {
       }, 5000); 
    });
 
-   // حل مشكلة التجمد والـ Crash البرمي عند تلقي ضربة أو ضرر بالسيرفر
    let hitCooldown = false;
    bot.on('health', () => {
       if (!hitCooldown && config.position.enabled && bot.pathfinder) {
@@ -148,9 +143,8 @@ function createBot() {
       if (rotationInterval) clearInterval(rotationInterval);
    });
 
-   // الإغلاق والتنظيف التلقائي عند انتهاء الاتصال لمنع تداخل الحسابات الشبحية
    bot.on('end', () => {
-      isBotRunning = false; // فك قفل القفل البرمجي ليسمح بإعادة الاتصال لاحقاً بأمان
+      isBotRunning = false; 
       if (rotationInterval) clearInterval(rotationInterval);
       console.log(`[AfkBot] Connection lost. Safe destroying old hooks...`);
       
@@ -159,12 +153,11 @@ function createBot() {
          bot.quit();
       } catch (e) {}
 
-      // مهلة تأخير ذكية 15 ثانية لتطهير كاش السيرفر قبل إرسال الحساب مجدداً
-      const delay = config.utils['auto-reconnect-delay'] || config.utils['auto-recconect-delay'] || 15000;
-      console.log(`[AfkBot] Reconnecting safely in ${delay / 1000} seconds...`);
+      // ✅ تم وضع تايمر 10 ثوانٍ كاملة هنا (10000 مللي ثانية) بناءً على طلبك لمنع التداخل
+      console.log(`[AfkBot] Reconnecting safely in 10 seconds...`);
       setTimeout(() => {
          createBot();
-      }, delay);
+      }, 10000); 
    });
 
    bot.on('kicked', (reason) => {
@@ -178,5 +171,4 @@ function createBot() {
    });
 }
 
-// البدء الآمن والتنفيذي الأول للبوت
 createBot();

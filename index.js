@@ -9,7 +9,7 @@ const express = require('express');
 const app = express();
 
 app.get('/', (req, res) => {
-  res.send('Bot is running safely!');
+  res.send('Bot Server is Running Safely!');
 });
 
 const PORT = process.env.PORT || 8000;
@@ -17,18 +17,9 @@ app.listen(PORT, () => {
   console.log(`[Web Server] Started on port ${PORT}`);
 });
 
-// القفل الأمني الشامل لمنع تشغيل نسختين في الخلفية كلياً
-let isBotRunning = false;
 let rotationInterval;
 
 function createBot() {
-   if (isBotRunning) {
-      console.log('[Anti-Double] A bot instance is already running. Blocked.');
-      return;
-   }
-   
-   isBotRunning = true;
-
    const bot = mineflayer.createBot({
       username: config['bot-account']['username'],
       password: config['bot-account']['password'],
@@ -119,26 +110,18 @@ function createBot() {
       if (rotationInterval) clearInterval(rotationInterval);
    });
 
-   // ⛔ تم إزالة الحدث الداخلي القديم ودمجه هنا لتطهير الجلسة تماماً قبل أي هجمة دخول جديدة
+   // ❌ تم إزالة دالة createBot() تماماً من هنا بناءً على طلبك لمنع أي دخول مزدوج
    bot.on('end', () => {
-      isBotRunning = false; 
       if (rotationInterval) clearInterval(rotationInterval);
-      console.log(`[AfkBot] Connection lost. Destroying hooks to prevent spam...`);
-      
+      console.log(`[AfkBot] Connection ended completely. No auto-reconnect will trigger.`);
       try {
          bot.removeAllListeners();
          bot.quit();
       } catch (e) {}
-
-      // تايمر أمان كامل (15 ثانية) يعطي السيرفر مهلة لتنظيف اللاعب الميت قبل المحاولة التالية
-      console.log(`[AfkBot] Waiting 15 seconds cooldown...`);
-      setTimeout(() => {
-         createBot();
-      }, 15000); 
    });
 
    bot.on('error', (err) => console.log(`[ERROR] ${err.message}`));
 }
 
-// تشغيل البوت الآمن لأول مرة
+// التشغيل الأساسي والوحيد للمشروع
 createBot();

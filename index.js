@@ -9,14 +9,26 @@ const express = require('express');
 const app = express();
 
 app.get('/', (req, res) => {
-  res.send('Bot has arrived');
+  res.send('Bot has arrived and server is running perfectly!');
 });
 
-app.listen(8000, () => {
-  console.log('Server started');
+const PORT = process.env.PORT || 8000;
+app.listen(PORT, () => {
+  console.log(`[Web Server] Started on port ${PORT}`);
 });
+
+// نظام الحماية الشامل لمنع تشغيل نسختين في نفس الوقت ومنع تعليق الجلسات
+let isBotRunning = false;
+let rotationInterval;
 
 function createBot() {
+   if (isBotRunning) {
+      console.log('[Anti-Double] A bot instance is already running. Blocking duplicate login.');
+      return;
+   }
+   
+   isBotRunning = true;
+
    const bot = mineflayer.createBot({
       username: config['bot-account']['username'],
       password: config['bot-account']['password'],
@@ -24,149 +36,147 @@ function createBot() {
       host: config.server.ip,
       port: config.server.port,
       version: config.server.version,
+      checkTimeoutInterval: 60 * 1000 
    });
 
    bot.loadPlugin(pathfinder);
-   const mcData = require('minecraft-data')(bot.version);
-   const defaultMove = new Movements(bot, mcData);
    bot.settings.colorsEnabled = false;
 
-   let pendingPromise = Promise.resolve();
+   // نظام الدوران التلقائي الذكي لمنع طرد الـ AFK بشكل طبيعي ودون تعليق
+   function startRotating() {
+      if (rotationInterval) clearInterval(rotationInterval);
+      let angle = 0;
+      rotationInterval = setInterval(() => {
+         if (bot && bot.entity) {
+            angle += 0.5;
+            bot.look(angle, 0);
+         }
+      }, 200);
+   }
 
-   function sendRegister(password) {
-      return new Promise((resolve, reject) => {
+   function stopRotating() {
+      if (rotationInterval) {
+         clearInterval(rotationInterval);
+         rotationInterval = null;
+      }
+   }
+
+   // معالجة الشات لعمليات الـ Register والـ Login التلقائية
+   bot.on('chat', (username, message) => {
+      if (message.includes('/register')) {
+         const password = config.utils['auto-auth'].password;
          bot.chat(`/register ${password} ${password}`);
-         console.log(`[Auth] Sent /register command.`);
-
-         bot.once('chat', (username, message) => {
-            console.log(`[ChatLog] <${username}> ${message}`); // Log all chat messages
-
-            // Check for various possible responses
-            if (message.includes('successfully registered')) {
-               console.log('[INFO] Registration confirmed.');
-               resolve();
-            } else if (message.includes('already registered')) {
-               console.log('[INFO] Bot was already registered.');
-               resolve(); // Resolve if already registered
-            } else if (message.includes('Invalid command')) {
-               reject(`Registration failed: Invalid command. Message: "${message}"`);
-            } else {
-               reject(`Registration failed: unexpected message "${message}".`);
-            }
-         });
-      });
-   }
-
-   function sendLogin(password) {
-      return new Promise((resolve, reject) => {
+         console.log(`[Auth] Executed register command.`);
+      }
+      if (message.includes('/login') || message.includes('قم بتسجيل الدخول')) {
+         const password = config.utils['auto-auth'].password;
          bot.chat(`/login ${password}`);
-         console.log(`[Auth] Sent /login command.`);
-
-         bot.once('chat', (username, message) => {
-            console.log(`[ChatLog] <${username}> ${message}`); // Log all chat messages
-
-            if (message.includes('successfully logged in')) {
-               console.log('[INFO] Login successful.');
-               resolve();
-            } else if (message.includes('Invalid password')) {
-               reject(`Login failed: Invalid password. Message: "${message}"`);
-            } else if (message.includes('not registered')) {
-               reject(`Login failed: Not registered. Message: "${message}"`);
-            } else {
-               reject(`Login failed: unexpected message "${message}".`);
-            }
-         });
-      });
-   }
+         console.log(`[Auth] Executed login command.`);
+      }
+   });
 
    bot.once('spawn', () => {
-      console.log('\x1b[33m[AfkBot] Bot joined the server', '\x1b[0m');
+      console.log('\x1b[33m[AfkBot] Bot joined the server\x1b[0m');
+      
+      const mcData = require('minecraft-data')(bot.version);
+      const defaultMove = new Movements(bot, mcData);
 
-      if (config.utils['auto-auth'].enabled) {
-         console.log('[INFO] Started auto-auth module');
-
-         const password = config.utils['auto-auth'].password;
-
-         pendingPromise = pendingPromise
-            .then(() => sendRegister(password))
-            .then(() => sendLogin(password))
-            .catch(error => console.error('[ERROR]', error));
-      }
-
+      // تشغيل رسائل الشات التلقائية
       if (config.utils['chat-messages'].enabled) {
          console.log('[INFO] Started chat-messages module');
          const messages = config.utils['chat-messages']['messages'];
 
          if (config.utils['chat-messages'].repeat) {
-            const delay = config.utils['chat-messages']['repeat-delay'];
+            const delay = config.utils['chat-messages'].repeat-delay;
             let i = 0;
-
-            let msg_timer = setInterval(() => {
-               bot.chat(`${messages[i]}`);
-
-               if (i + 1 === messages.length) {
-                  i = 0;
-               } else {
-                  i++;
+            setInterval(() => {
+               if(bot && bot.chat) {
+                  bot.chat(`${messages[i]}`);
+                  i = (i + 1) % messages.length;
                }
             }, delay * 1000);
          } else {
-            messages.forEach((msg) => {
-               bot.chat(msg);
-            });
+            messages.forEach((msg) => msg && bot.chat(msg));
          }
       }
 
-      const pos = config.position;
-
-      if (config.position.enabled) {
-         console.log(
-            `\x1b[32m[Afk Bot] Starting to move to target location (${pos.x}, ${pos.y}, ${pos.z})\x1b[0m`
-         );
-         bot.pathfinder.setMovements(defaultMove);
-         bot.pathfinder.setGoal(new GoalBlock(pos.x, pos.y, pos.z));
-      }
-
-      if (config.utils['anti-afk'].enabled) {
-         bot.setControlState('jump', true);
-         if (config.utils['anti-afk'].sneak) {
-            bot.setControlState('sneak', true);
+      // تأخير الحركة 5 ثوانٍ كاملة لتجنب صدمة الاتصال وضمان ثبات الـ ECONNRESET
+      setTimeout(() => {
+         const pos = config.position;
+         if (config.position.enabled) {
+            console.log(`\x1b[32m[Afk Bot] Moving safely to target location (${pos.x}, ${pos.y}, ${pos.z})\x1b[0m`);
+            stopRotating(); 
+            bot.pathfinder.setMovements(defaultMove);
+            bot.pathfinder.setGoal(new GoalBlock(pos.x, pos.y, pos.z));
+         } else {
+            if (config.utils['anti-afk'].enabled) {
+               startRotating();
+               if (config.utils['anti-afk'].sneak) bot.setControlState('sneak', true);
+            }
          }
+      }, 5000); 
+   });
+
+   // حل مشكلة التجمد والـ Crash البرمي عند تلقي ضربة أو ضرر بالسيرفر
+   let hitCooldown = false;
+   bot.on('health', () => {
+      if (!hitCooldown && config.position.enabled && bot.pathfinder) {
+         hitCooldown = true;
+         setTimeout(() => {
+            console.log('\x1b[35m[AfkBot] Bot was hit! Re-fixing path to target...\x1b[0m');
+            bot.pathfinder.stop(); 
+            stopRotating();
+            const mcData = require('minecraft-data')(bot.version);
+            const defaultMove = new Movements(bot, mcData);
+            bot.pathfinder.setMovements(defaultMove);
+            bot.pathfinder.setGoal(new GoalBlock(config.position.x, config.position.y, config.position.z));
+            hitCooldown = false;
+         }, 1000); 
       }
    });
 
    bot.on('goal_reached', () => {
-      console.log(
-         `\x1b[32m[AfkBot] Bot arrived at the target location. ${bot.entity.position}\x1b[0m`
-      );
+      console.log(`\x1b[32m[AfkBot] Bot arrived at target location successfully.\x1b[0m`);
+      if (config.utils['anti-afk'].enabled) {
+         startRotating(); 
+         if (config.utils['anti-afk'].sneak) bot.setControlState('sneak', true);
+      }
    });
 
    bot.on('death', () => {
-      console.log(
-         `\x1b[33m[AfkBot] Bot has died and was respawned at ${bot.entity.position}`,
-         '\x1b[0m'
-      );
+      console.log(`\x1b[33m[AfkBot] Bot died and respawned.\x1b[0m`);
+      if (rotationInterval) clearInterval(rotationInterval);
    });
 
-   if (config.utils['auto-reconnect']) {
-      bot.on('end', () => {
-         setTimeout(() => {
-            createBot();
-         }, config.utils['auto-recconect-delay']);
-      });
-   }
+   // الإغلاق والتنظيف التلقائي عند انتهاء الاتصال لمنع تداخل الحسابات الشبحية
+   bot.on('end', () => {
+      isBotRunning = false; // فك قفل القفل البرمجي ليسمح بإعادة الاتصال لاحقاً بأمان
+      if (rotationInterval) clearInterval(rotationInterval);
+      console.log(`[AfkBot] Connection lost. Safe destroying old hooks...`);
+      
+      try {
+         bot.removeAllListeners();
+         bot.quit();
+      } catch (e) {}
 
-   bot.on('kicked', (reason) =>
-      console.log(
-         '\x1b[33m',
-         `[AfkBot] Bot was kicked from the server. Reason: \n${reason}`,
-         '\x1b[0m'
-      )
-   );
+      // مهلة تأخير ذكية 15 ثانية لتطهير كاش السيرفر قبل إرسال الحساب مجدداً
+      const delay = config.utils['auto-reconnect-delay'] || config.utils['auto-recconect-delay'] || 15000;
+      console.log(`[AfkBot] Reconnecting safely in ${delay / 1000} seconds...`);
+      setTimeout(() => {
+         createBot();
+      }, delay);
+   });
 
-   bot.on('error', (err) =>
-      console.log(`\x1b[31m[ERROR] ${err.message}`, '\x1b[0m')
-   );
+   bot.on('kicked', (reason) => {
+      isBotRunning = false;
+      if (rotationInterval) clearInterval(rotationInterval);
+      console.log(`\x1b[33m[AfkBot] Bot was kicked. Reason: \n${reason}\x1b[0m`);
+   });
+   
+   bot.on('error', (err) => {
+      console.log(`\x1b[31m[ERROR] ${err.message}\x1b[0m`);
+   });
 }
 
+// البدء الآمن والتنفيذي الأول للبوت
 createBot();

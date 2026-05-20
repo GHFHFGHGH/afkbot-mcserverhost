@@ -9,7 +9,7 @@ const express = require('express');
 const app = express();
 
 app.get('/', (req, res) => {
-  res.send('Bot is running perfectly!');
+  res.send('Bot is running safely!');
 });
 
 const PORT = process.env.PORT || 8000;
@@ -17,12 +17,13 @@ app.listen(PORT, () => {
   console.log(`[Web Server] Started on port ${PORT}`);
 });
 
+// القفل الأمني الشامل لمنع تشغيل نسختين في الخلفية كلياً
 let isBotRunning = false;
 let rotationInterval;
 
 function createBot() {
    if (isBotRunning) {
-      console.log('[Anti-Double] A bot instance is already running. Blocking duplicate login.');
+      console.log('[Anti-Double] A bot instance is already running. Blocked.');
       return;
    }
    
@@ -63,12 +64,10 @@ function createBot() {
       if (message.includes('/register')) {
          const password = config.utils['auto-auth'].password;
          bot.chat(`/register ${password} ${password}`);
-         console.log(`[Auth] Executed register command.`);
       }
       if (message.includes('/login') || message.includes('قم بتسجيل الدخول')) {
          const password = config.utils['auto-auth'].password;
          bot.chat(`/login ${password}`);
-         console.log(`[Auth] Executed login command.`);
       }
    });
 
@@ -79,12 +78,9 @@ function createBot() {
       const defaultMove = new Movements(bot, mcData);
 
       if (config.utils['chat-messages'].enabled) {
-         console.log('[INFO] Started chat-messages module');
          const messages = config.utils['chat-messages']['messages'];
-
          if (config.utils['chat-messages'].repeat) {
-            // ✅ إصلاح القوس هنا أيضاً لتفادي كراش السطر 90 القديم
-            const delay = config.utils['chat-messages']['repeat-delay'];
+            const delay = config.utils['chat-messages']['repeat-delay'] || 60;
             let i = 0;
             setInterval(() => {
                if(bot && bot.chat) {
@@ -100,7 +96,6 @@ function createBot() {
       setTimeout(() => {
          const pos = config.position;
          if (config.position.enabled) {
-            console.log(`\x1b[32m[Afk Bot] Moving safely to target location (${pos.x}, ${pos.y}, ${pos.z})\x1b[0m`);
             stopRotating(); 
             bot.pathfinder.setMovements(defaultMove);
             bot.pathfinder.setGoal(new GoalBlock(pos.x, pos.y, pos.z));
@@ -113,25 +108,7 @@ function createBot() {
       }, 5000); 
    });
 
-   let hitCooldown = false;
-   bot.on('health', () => {
-      if (!hitCooldown && config.position.enabled && bot.pathfinder) {
-         hitCooldown = true;
-         setTimeout(() => {
-            console.log('\x1b[35m[AfkBot] Bot was hit! Re-fixing path to target...\x1b[0m');
-            bot.pathfinder.stop(); 
-            stopRotating();
-            const mcData = require('minecraft-data')(bot.version);
-            const defaultMove = new Movements(bot, mcData);
-            bot.pathfinder.setMovements(defaultMove);
-            bot.pathfinder.setGoal(new GoalBlock(config.position.x, config.position.y, config.position.z));
-            hitCooldown = false;
-         }, 1000); 
-      }
-   });
-
    bot.on('goal_reached', () => {
-      console.log(`\x1b[32m[AfkBot] Bot arrived at target location successfully.\x1b[0m`);
       if (config.utils['anti-afk'].enabled) {
          startRotating(); 
          if (config.utils['anti-afk'].sneak) bot.setControlState('sneak', true);
@@ -139,36 +116,29 @@ function createBot() {
    });
 
    bot.on('death', () => {
-      console.log(`\x1b[33m[AfkBot] Bot died and respawned.\x1b[0m`);
       if (rotationInterval) clearInterval(rotationInterval);
    });
 
+   // ⛔ تم إزالة الحدث الداخلي القديم ودمجه هنا لتطهير الجلسة تماماً قبل أي هجمة دخول جديدة
    bot.on('end', () => {
       isBotRunning = false; 
       if (rotationInterval) clearInterval(rotationInterval);
-      console.log(`[AfkBot] Connection lost. Safe destroying old hooks...`);
+      console.log(`[AfkBot] Connection lost. Destroying hooks to prevent spam...`);
       
       try {
          bot.removeAllListeners();
          bot.quit();
       } catch (e) {}
 
-      // ✅ تم وضع تايمر 10 ثوانٍ كاملة هنا (10000 مللي ثانية) بناءً على طلبك لمنع التداخل
-      console.log(`[AfkBot] Reconnecting safely in 10 seconds...`);
+      // تايمر أمان كامل (15 ثانية) يعطي السيرفر مهلة لتنظيف اللاعب الميت قبل المحاولة التالية
+      console.log(`[AfkBot] Waiting 15 seconds cooldown...`);
       setTimeout(() => {
          createBot();
-      }, 10000); 
+      }, 15000); 
    });
 
-   bot.on('kicked', (reason) => {
-      isBotRunning = false;
-      if (rotationInterval) clearInterval(rotationInterval);
-      console.log(`\x1b[33m[AfkBot] Bot was kicked. Reason: \n${reason}\x1b[0m`);
-   });
-   
-   bot.on('error', (err) => {
-      console.log(`\x1b[31m[ERROR] ${err.message}\x1b[0m`);
-   });
+   bot.on('error', (err) => console.log(`[ERROR] ${err.message}`));
 }
 
+// تشغيل البوت الآمن لأول مرة
 createBot();

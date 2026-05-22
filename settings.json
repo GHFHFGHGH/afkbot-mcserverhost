@@ -6,7 +6,7 @@
   },
 
   "server": {
-    "ip": "strongcraft.mcsh.io", 
+    "ip": "oldcraft.mcsh.io", 
     "port": 25565,   
     "version": "1.12.1"   
   },

@@ -6,7 +6,7 @@
   },
 
   "server": {
-    "ip": "oldcraft.mcsh.io", 
+    "ip": "legacysmp760.mcsh.io", 
     "port": 25565,   
     "version": "1.12.1"   
   },
